@@ -151,3 +151,41 @@ func SaveCache(s Snapshot) error {
 	}
 	return os.Rename(tmp, p)
 }
+
+// Merge copies the fields owned by groups from a newer collection into s.
+// Scans can overlap, so each result only replaces what it actually collected.
+func (s *Snapshot) Merge(from Snapshot, groups []Group) {
+	for _, g := range groups {
+		switch g {
+		case GBrew:
+			s.Brew = from.Brew
+		case GApps:
+			s.Apps = from.Apps
+		case GBins:
+			s.Bins, s.BinVersions = from.Bins, from.BinVersions
+		case GNpm:
+			s.Npm = from.Npm
+		case GRuntimes:
+			s.Runtimes = from.Runtimes
+		case GFonts:
+			s.Fonts = from.Fonts
+		case GExts:
+			s.Exts = from.Exts
+		case GServices:
+			s.Services = from.Services
+		case GDotfiles:
+			s.Dotfiles = from.Dotfiles
+		case GHistory:
+			s.History = from.History
+		}
+		if e, ok := from.Errors[g]; ok {
+			if s.Errors == nil {
+				s.Errors = map[Group]string{}
+			}
+			s.Errors[g] = e
+		} else {
+			delete(s.Errors, g)
+		}
+	}
+	s.ScannedAt = from.ScannedAt
+}

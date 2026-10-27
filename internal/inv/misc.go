@@ -3,6 +3,7 @@ package inv
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -213,7 +214,7 @@ type ServiceRaw struct {
 	Label       string    `json:"label"`
 	Path        string    `json:"path"`
 	Program     string    `json:"program"`
-	Scope       string    `json:"scope"` // "user agent", "system agent", "system daemon"
+	Scope       string    `json:"scope"` // "user agent", "global agent", "daemon"
 	RunAtLoad   bool      `json:"run_at_load"`
 	KeepAlive   bool      `json:"keep_alive"`
 	Disabled    bool      `json:"disabled"`
@@ -224,16 +225,21 @@ type ServiceRaw struct {
 func (e *Env) ServiceDirs() map[string]string {
 	return map[string]string{
 		filepath.Join(e.Home, "Library", "LaunchAgents"): "user agent",
-		"/Library/LaunchAgents":                          "system agent",
-		"/Library/LaunchDaemons":                         "system daemon",
+		"/Library/LaunchAgents":                          "global agent",
+		"/Library/LaunchDaemons":                         "daemon",
 	}
 }
 
 func collectServices(env *Env) ([]ServiceRaw, error) {
 	running := map[string]bool{}
-	if out, err := run(5*time.Second, "/bin/launchctl", "list"); err == nil {
+	// `launchctl print` lists "pid status label" rows per domain and needs no root for reading.
+	for _, domain := range []string{"system", fmt.Sprintf("gui/%d", os.Getuid())} {
+		out, err := run(5*time.Second, "/bin/launchctl", "print", domain)
+		if err != nil {
+			continue
+		}
 		for _, line := range strings.Split(string(out), "\n") {
-			if f := strings.Fields(line); len(f) == 3 && f[0] != "-" && f[0] != "PID" {
+			if f := strings.Fields(line); len(f) == 3 && f[0] != "0" && isDigits(f[0]) {
 				running[f[2]] = true
 			}
 		}
@@ -274,6 +280,15 @@ func collectServices(env *Env) ([]ServiceRaw, error) {
 		}
 	}
 	return out, nil
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // Section: Shell history

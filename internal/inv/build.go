@@ -16,11 +16,13 @@ type builder struct {
 	items    map[string]*Item
 	order    []string
 	dangling map[*Item][]string // python.org links whose framework is gone
+	words    map[string]string  // distinctive dotfiles words -> first file mentioning them
+	appReal  map[*Item]string   // resolved bundle paths for desktop items
 }
 
 // Build turns raw observations into display items: pure, so it is cheap to rerun after any rescan.
 func Build(env *Env, s Snapshot) []Item {
-	b := &builder{env: env, snap: &s, items: map[string]*Item{}, dangling: map[*Item][]string{}}
+	b := &builder{env: env, snap: &s, items: map[string]*Item{}, dangling: map[*Item][]string{}, appReal: map[*Item]string{}}
 	b.apps()
 	b.formulae()
 	b.runtimes()
@@ -164,7 +166,12 @@ func (b *builder) appForPath(p string) *Item {
 		if p == it.Path || strings.HasPrefix(p, it.Path+"/") {
 			return it
 		}
-		if real, err := filepath.EvalSymlinks(it.Path); err == nil && (p == real || strings.HasPrefix(p, real+"/")) {
+		real, ok := b.appReal[it]
+		if !ok {
+			real, _ = filepath.EvalSymlinks(it.Path)
+			b.appReal[it] = real
+		}
+		if real != "" && (p == real || strings.HasPrefix(p, real+"/")) {
 			return it
 		}
 	}
@@ -390,19 +397,25 @@ func installRoot(home, target string) string {
 	return filepath.Join(append([]string{home}, rel[:min(n, len(rel))]...)...)
 }
 
+var wordRe = regexp.MustCompile(`[\w.-]+`)
+
 // mentionWord finds a distinctive name in dotfiles; short names are skipped to avoid false matches.
 func (b *builder) mentionWord(name string) string {
 	if len(name) < 5 {
 		return ""
 	}
-	re := regexp.MustCompile(`(^|[^\w-])` + regexp.QuoteMeta(name) + `($|[^\w-])`)
-	best := ""
-	for file, text := range b.snap.Dotfiles.Corpus {
-		if re.MatchString(text) && (best == "" || file < best) {
-			best = file
+	if b.words == nil {
+		b.words = map[string]string{}
+		for file, text := range b.snap.Dotfiles.Corpus {
+			for _, w := range wordRe.FindAllString(text, -1) {
+				w = strings.Trim(w, ".")
+				if prev, ok := b.words[w]; !ok || file < prev {
+					b.words[w] = file
+				}
+			}
 		}
 	}
-	return best
+	return b.words[name]
 }
 
 // Section: npm globals
@@ -503,6 +516,7 @@ func (b *builder) fonts() {
 		}
 		g.files++
 		g.styles[style] = true
+		g.item.Commands = appendOnce(g.item.Commands, family)
 	}
 	for _, k := range keys {
 		g := groups[k]
@@ -510,6 +524,10 @@ func (b *builder) fonts() {
 		it.Category = "Fonts"
 		if strings.Contains(strings.ReplaceAll(it.Name, " ", ""), "NerdFont") {
 			it.Category = "Nerd Fonts"
+		}
+		sort.Strings(it.Commands)
+		if len(it.Commands) < 2 {
+			it.Commands = nil // a single family adds nothing beyond the name
 		}
 		for s := range g.styles {
 			it.Members = append(it.Members, s)
