@@ -7,7 +7,7 @@
 
   <p>
     inv finds custom installs across Homebrew, the App Store, npm, uv, vendor installers, and hand-copied binaries.
-    It separates desktop apps from terminal tools, flags drift from your dotfiles, and updates as you install and remove things.
+    It separates desktop apps from terminal tools, flags drift from your dotfiles, upgrades or removes things with the right package manager, and updates as you install and remove things.
   </p>
 
   <p>
@@ -23,26 +23,25 @@
 You need macOS and either Nix with flakes or Go 1.26+.
 Homebrew, `mas`, and `npm` are optional; inv uses them when they are installed.
 
-From the repository root, build and run:
+Run it straight from GitHub with Nix:
 
 ```sh
-nix develop -c go build -o inv .
-./inv
+nix run github:dboyza/inv
 ```
 
-Without Nix, run `go build -o inv .` instead.
+Or build from a checkout, with `nix develop -c go build -o inv .` or plain `go build -o inv .`, then run `./inv`.
 The first scan takes a few seconds, then six tabs appear with counts for desktop apps, terminal tools, runtimes, fonts, extensions, and services.
 Later launches paint instantly from a cache in `~/Library/Caches/inv/` and refresh in the background.
 
-inv only reads your system.
-It does check for updates over the network with `brew outdated --greedy`, `mas outdated`, and `npm outdated -g`, and it runs `--version` on standalone binaries that have no other version source.
+inv only changes your system when you confirm an upgrade or uninstall.
+In the background it checks for updates over the network with `brew outdated --greedy`, `mas outdated`, and `npm outdated -g`, and it runs `--version` on standalone binaries that have no other version source.
 
 For scripting, `./inv --json` prints the full inventory and exits.
 
 ## Preview
 
 <p align="center">
-  <a href="docs/assets/screenshot.png"><img src="docs/assets/screenshot.png" width="860" alt="inv showing the Desktop tab grouped by purpose, with Docker selected: an available update, its Homebrew cask source, and the six command-line tools it bundles"></a>
+  <a href="docs/assets/screenshot.png"><img src="docs/assets/screenshot.png" width="860" alt="inv showing the Desktop tab grouped by purpose, with Docker selected: Upgrade and Uninstall buttons, an available update, its Homebrew cask source, and the six command-line tools it bundles"></a>
 </p>
 
 ## How it works
@@ -53,9 +52,15 @@ inv collects raw observations from each install source in parallel, then classif
 - **Every row shows where it came from.** Source badges distinguish brew, cask, App Store, npm, uv, dotfiles, vendor installers, and manual copies.
 - **Apps and their CLIs are linked.** Commands that ship inside an app, like `docker` in Docker.app, show `via Docker`, and Enter jumps between them.
 - **Drift is visible.** ◆ marks items your dotfiles declare, ◇ marks hand installs, and ✗ marks declared items that are missing.
+- **Upgrade and uninstall in place.** Buttons in the details pane run the owning package manager, such as `brew upgrade --cask` or `npm uninstall -g`, after a confirmation that shows the exact command.
 - **It stays current.** A file watcher rescans only the affected sources and announces installs, removals, and upgrades as they happen.
 
 The details pane adds versions and available updates, install and last-used dates, zsh history run counts, commands shared between installs, dangling links, and a reinstall command.
+
+Upgrades and uninstalls take over the terminal so you see live output and can answer Touch ID or `sudo` prompts; inv returns when the command finishes.
+Items no package manager owns, such as direct-download apps or hand-copied binaries, move to the Trash, where Finder's Put Back restores them.
+inv refuses to remove things it cannot do safely, such as CLIs bundled inside an app, dotfiles-managed tools, and system installs, and explains why instead.
+Press `E` to export every untracked install as snippets for `nix/homebrew.nix` and `nix/macos-apps.json`, plus commented lists of what no package manager can reproduce.
 
 Dotfiles drift reads `nix/homebrew.nix`, `nix/macos-apps.json`, and `scripts/managed-tools.json` from a Nix dotfiles repository.
 inv finds the repository by following Home Manager links such as `~/.zshrc`, or you can set `INV_DOTFILES` to its path.
@@ -72,9 +77,11 @@ Without one, drift markers are hidden.
 | `enter` | Jump between an app and its bundled CLIs; opens details on narrow screens |
 | `b` / `s` | Group by purpose, source, or nothing; sort by name, newest, or last used |
 | `t` / `u` / `d` | Show only untracked, only updatable, or include brew dependencies |
+| `U` / `X` | Upgrade or uninstall the selected item (or click its button), after confirming |
+| `E` | Export untracked installs as dotfiles snippets |
 | `o` `f` `w` | Open the app, reveal in Finder, open the homepage |
 | `c` / `i` | Copy the path or the reinstall command |
-| `r` / `U` | Rescan now, recheck updates |
+| `r` / `R` | Rescan now, recheck updates |
 | `?` | Full help |
 
 </details>
@@ -88,10 +95,11 @@ package-tui/
 │   ├── snapshot.go     Collector groups, parallel scans, cache
 │   ├── build.go        Snapshot to display items: drift, links, updates
 │   ├── catalog.go      Curated purpose groups and descriptions
+│   ├── ops.go          Upgrade and uninstall plans per source
 │   └── watch.go        Debounced filesystem watching
 ├── internal/ui/        Bubble Tea model, views, keys, Rose Pine theme
 ├── docs/assets/        Logo and screenshot
-├── flake.nix           Dev shell that pins Go
+├── flake.nix           Nix package and a dev shell that pins Go
 └── AGENTS.md           Conventions for contributors and coding agents
 ```
 

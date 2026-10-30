@@ -10,7 +10,9 @@ Record only durable project knowledge, never session notes.
 - Desktop apps and terminal tools must stay visually separate: distinct tabs, accent colors, and icons per kind.
 - Tabs are Desktop, Terminal, Runtimes, Fonts, Extensions, and Services; items group by purpose by default, with the source shown as a badge.
 - The theme is Rose Pine Moon, matching the user's dotfiles `theme/palette.json`; do not paint a global background.
-- Actions stay non-destructive: open, reveal, homepage, copy path, copy reinstall command; no install, update, or uninstall.
+- Upgrade and uninstall always confirm first and run in the foreground via `tea.ExecProcess`, so output and Touch ID or sudo prompts stay visible; uninstall dialogs default to Cancel.
+  Plans live in `ops.go`: use the owning package manager, move unmanaged items to the Trash through Finder, and block bundled CLIs, dotfiles-managed tools, plugins, services, and system installs with a reason.
+  Never trash a path that `safeToTrash` rejects, and trash font families by their exact files, never the Fonts folder.
 - Homebrew dependencies are hidden until toggled; macOS system apps (non-App Store `com.apple.*`) are excluded, while Apple's App Store apps appear in an Apple group.
 - CLIs that ship inside apps appear in Terminal with a `via <App>` badge and link back to their app.
 - Dotfiles drift (◆ declared, ◇ untracked, ✗ missing) appears only when a Nix dotfiles repo is found.
@@ -35,7 +37,9 @@ Record only durable project knowledge, never session notes.
 
 ## Verification
 
-- Run `nix develop -c go vet ./...` and `nix develop -c go test ./...`.
+- Run `nix develop -c go vet ./...` and `nix develop -c go test ./...`; `nix build` also runs the tests.
+- After changing Go dependencies, refresh `vendorHash` in `flake.nix` from the hash `nix build` reports.
+- The user's dotfiles consume this flake as `github:dboyza/inv`; keep `packages.<darwin system>.default` building.
 - `nix develop -c go test ./internal/inv -bench BuildFromCache` measures `Build` against the local cache; keep it in the low milliseconds.
 - For visual checks, run the app in tmux with `env -u TMUX COLORTERM=truecolor ./inv` so Lip Gloss keeps full color, and test 80 × 24 as well as wide terminals.
 - Check classification against the real machine with `./inv --json`.
