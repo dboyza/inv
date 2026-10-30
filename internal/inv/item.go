@@ -86,7 +86,8 @@ type Item struct {
 	Dependency  bool      `json:"dependency,omitempty"` // brew formula not installed on request
 	Apple       bool      `json:"apple,omitempty"`
 	Commands    []string  `json:"commands,omitempty"`
-	Members     []string  `json:"members,omitempty"` // font styles or grouped files
+	Members     []string  `json:"members,omitempty"` // font styles
+	Files       []string  `json:"files,omitempty"`   // exact font files in a family
 	Deps        []string  `json:"deps,omitempty"`
 	Provides    []string  `json:"provides,omitempty"`    // IDs of CLIs bundled in this app
 	ProvidedBy  string    `json:"provided_by,omitempty"` // ID of the app bundling this CLI

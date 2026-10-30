@@ -21,7 +21,7 @@ func (m Model) detailView(w, h int) string {
 	if it == nil {
 		lines = []string{"", lipgloss.PlaceHorizontal(inner, lipgloss.Center, sMuted.Render("Select something to see its details"))}
 	} else {
-		lines = m.detailLines(it, inner)
+		lines, _ = m.detailLines(it, inner)
 	}
 	maxScroll := max(0, len(lines)-(h-2))
 	scroll := min(m.dScroll, maxScroll)
@@ -42,7 +42,7 @@ func (m Model) detailView(w, h int) string {
 	return box(w, h, fg(acc).Bold(true).Render("Details"), more, hint, "", lines, cOverlay)
 }
 
-func (m Model) detailLines(it *inv.Item, w int) []string {
+func (m Model) detailLines(it *inv.Item, w int) ([]string, []actionHit) {
 	acc := kindAccent[it.Kind]
 	var out []string
 	add := func(s ...string) { out = append(out, s...) }
@@ -61,6 +61,14 @@ func (m Model) detailLines(it *inv.Item, w int) []string {
 		add(wrap(sSubtle, it.Desc, w)...)
 	}
 	add("")
+	bar, hits := m.actionBar(it, w)
+	for i := range hits {
+		hits[i].line = len(out)
+	}
+	if len(bar) > 0 {
+		add(bar...)
+		add("")
+	}
 
 	kv := func(label, value string) {
 		if value == "" {
@@ -167,7 +175,7 @@ func (m Model) detailLines(it *inv.Item, w int) []string {
 	if cmd := installCommand(it); cmd != "" {
 		section("Reinstall", "i copies", []string{sMuted.Render("$ ") + sText.Render(cmd)})
 	}
-	return out
+	return out, hits
 }
 
 var kindSingular = map[inv.Kind]string{

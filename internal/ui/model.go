@@ -104,6 +104,12 @@ type Model struct {
 	showHelp   bool
 	detailOpen bool // narrow layout detail overlay
 
+	confirm      *inv.Plan // pending upgrade or uninstall awaiting confirmation
+	confirmFocus int       // 0 confirm, 1 cancel
+	exportOpen   bool
+	exportText   string
+	exportScroll int
+
 	width, height int
 }
 
@@ -223,6 +229,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case watchMsg:
 		m.scans++
 		return m, tea.Batch(m.scanCmd(msg.groups, false), waitForChange(m.watcher))
+
+	case opDoneMsg:
+		return m.finishOp(msg)
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)

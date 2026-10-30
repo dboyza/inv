@@ -457,12 +457,32 @@ func (b *builder) runtimes() {
 		if it.Desc == "" {
 			it.Desc = fmt.Sprintf("%s interpreter managed by %s", r.Name, r.Manager)
 		}
-		b.declare(&it, "")
+		where := ""
+		if r.Source == SrcUv {
+			where = b.uvDeclared(minorVersion(r.Version))
+		}
+		b.declare(&it, where)
 		if r.Source == SrcSystem {
 			it.Declared = DeclUnknown
 		}
 		b.add(it)
 	}
+}
+
+var uvInstallRe = regexp.MustCompile(`uv python install[^\n]*`)
+
+// uvDeclared finds a dotfiles line like "uv python install 3.12 3.13" naming this minor version.
+func (b *builder) uvDeclared(minor string) string {
+	versionRe := regexp.MustCompile(`(^|[\s"'])` + regexp.QuoteMeta(minor) + `([\s"'.]|$)`)
+	best := ""
+	for file, text := range b.snap.Dotfiles.Corpus {
+		for _, line := range uvInstallRe.FindAllString(text, -1) {
+			if versionRe.MatchString(line) && (best == "" || file < best) {
+				best = file
+			}
+		}
+	}
+	return best
 }
 
 // Section: Fonts
@@ -515,6 +535,7 @@ func (b *builder) fonts() {
 			keys = append(keys, key)
 		}
 		g.files++
+		g.item.Files = append(g.item.Files, f.Path)
 		g.styles[style] = true
 		g.item.Commands = appendOnce(g.item.Commands, family)
 	}

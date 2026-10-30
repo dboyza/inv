@@ -20,6 +20,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = false
 		return m, nil
 	}
+	if m.confirm != nil {
+		return m.handleConfirmKey(key)
+	}
+	if m.exportOpen {
+		return m.handleExportKey(key)
+	}
 	if m.searching {
 		switch key {
 		case "esc":
@@ -113,6 +119,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.notify("↻", "Rescanning everything", cSubtle)
 		return m, m.scanCmd(inv.AllGroups, false)
 	case "U":
+		m.askOp(inv.OpUpgrade)
+	case "X":
+		m.askOp(inv.OpUninstall)
+	case "E":
+		return m, m.openExport()
+	case "R":
 		if !m.checking {
 			m.checking = true
 			m.notify("↻", "Checking for updates", cSubtle)
@@ -139,7 +151,17 @@ func (m Model) handleClick(mouse tea.Mouse) (tea.Model, tea.Cmd) {
 		m.showHelp = false
 		return m, nil
 	}
+	if m.confirm != nil {
+		return m.handleConfirmClick(mouse)
+	}
+	if m.exportOpen {
+		return m, nil
+	}
 	lay := m.layout()
+	if kind, ok := m.actionAt(mouse.X, mouse.Y); ok {
+		m.askOp(kind)
+		return m, nil
+	}
 	if mouse.Y == lay.tabsY {
 		for i, span := range m.tabSpans() {
 			if mouse.X >= span[0] && mouse.X < span[1] {
@@ -161,6 +183,31 @@ func (m Model) handleClick(mouse tea.Mouse) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// actionAt hit-tests the detail pane's Upgrade and Uninstall buttons.
+func (m Model) actionAt(x, y int) (inv.OpKind, bool) {
+	lay := m.layout()
+	left, w := lay.listW, lay.detailW
+	if w == 0 {
+		if !m.detailOpen {
+			return 0, false
+		}
+		left, w = 0, lay.listW
+	}
+	it := m.selected()
+	if it == nil {
+		return 0, false
+	}
+	lines, hits := m.detailLines(it, w-4)
+	scroll := min(m.dScroll, max(0, len(lines)-(lay.bodyH-2)))
+	for _, h := range hits {
+		// Content starts one row below the top border and two columns in (border plus padding).
+		if y == lay.bodyY+1+h.line-scroll && x >= left+2+h.x0 && x < left+2+h.x1 {
+			return h.kind, true
+		}
+	}
+	return 0, false
 }
 
 func (m Model) overDetail(x int) bool {

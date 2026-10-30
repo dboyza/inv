@@ -89,3 +89,47 @@ func TestJumpFollowsBundledCLILinks(t *testing.T) {
 		t.Error("jumping back from the CLI should return to its app")
 	}
 }
+
+func TestUninstallButtonOpensConfirmationThatDefaultsToCancel(t *testing.T) {
+	m := testModel(140, 40)
+	m.setTab(1)
+	m.cursor[m.tab] = "brew:terraform"
+	m.askOp(inv.OpUninstall)
+	if m.confirm == nil || m.confirmFocus != 1 {
+		t.Fatalf("confirm = %v focus = %d", m.confirm, m.confirmFocus)
+	}
+	next, _ := m.handleConfirmKey("enter")
+	if next.(Model).confirm != nil {
+		t.Error("enter on the default Cancel button should close the dialog")
+	}
+	for _, size := range [][2]int{{80, 24}, {140, 40}} {
+		m := testModel(size[0], size[1])
+		m.setTab(1)
+		m.cursor[m.tab] = "brew:terraform"
+		m.askOp(inv.OpUpgrade)
+		if m.confirm == nil {
+			t.Fatal("terraform has an update, so upgrade should be offered")
+		}
+		for i, l := range strings.Split(m.View().Content, "\n") {
+			if lipgloss.Width(l) > size[0] {
+				t.Errorf("%v: line %d overflows", size, i)
+			}
+		}
+	}
+}
+
+func TestDetailButtonsAreClickable(t *testing.T) {
+	m := testModel(140, 40)
+	m.setTab(1)
+	m.cursor[m.tab] = "brew:terraform"
+	lay := m.layout()
+	lines, hits := m.detailLines(m.selected(), lay.detailW-4)
+	if len(hits) == 0 {
+		t.Fatalf("no action buttons in details:\n%s", strings.Join(lines, "\n"))
+	}
+	h := hits[0]
+	kind, ok := m.actionAt(lay.listW+2+h.x0, lay.bodyY+1+h.line)
+	if !ok || kind != h.kind {
+		t.Errorf("click missed the %v button", h.kind)
+	}
+}

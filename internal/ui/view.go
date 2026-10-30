@@ -53,10 +53,19 @@ func (m Model) View() tea.View {
 	b.WriteString("\n" + m.footerView())
 
 	content := b.String()
-	if len(m.toasts) > 0 || m.showHelp {
+	if len(m.toasts) > 0 || m.showHelp || m.confirm != nil || m.exportOpen {
 		layers := []*lipgloss.Layer{lipgloss.NewLayer(content)}
 		if t := m.toastView(); t != "" {
 			layers = append(layers, lipgloss.NewLayer(t).X(max(0, m.width-lipgloss.Width(t)-2)).Y(max(0, m.height-2-lipgloss.Height(t))).Z(1))
+		}
+		if m.exportOpen {
+			e := m.exportView()
+			layers = append(layers, lipgloss.NewLayer(e).X(max(0, (m.width-lipgloss.Width(e))/2)).Y(max(0, (m.height-lipgloss.Height(e))/2)).Z(2))
+		}
+		if m.confirm != nil {
+			box, _, _ := m.confirmLayout()
+			x, y := m.confirmOrigin(box)
+			layers = append(layers, lipgloss.NewLayer(box).X(x).Y(y).Z(3))
 		}
 		if m.showHelp {
 			h := m.helpView()
@@ -384,7 +393,7 @@ func (m Model) footerView() string {
 		enter = "details"
 	}
 	hints := []string{"/", "search", "←→", "tabs", "↵", enter, "b", "group", "s", "sort", "t", "untracked", "u", "updates",
-		"d", "deps", "o", "open", "w", "web", "i", "copy install", "?", "help", "q", "quit"}
+		"U", "upgrade", "X", "uninstall", "d", "deps", "E", "export", "o", "open", "?", "help", "q", "quit"}
 	var untracked, updates int
 	for _, it := range m.items {
 		if it.Dependency {
@@ -442,9 +451,10 @@ func (m Model) helpView() string {
 		"pgup pgdn", "page", "J K", "scroll details", "↵ / click", "app ⇄ bundled CLI", "/", "fuzzy search")
 	view := section("View",
 		"b", "group: purpose, source, none", "s", "sort: name, newest, last used", "t", "only untracked (◇)",
-		"u", "only updates (↑)", "d", "show brew dependencies", "esc", "clear filters", "r", "rescan now", "U", "recheck updates")
+		"u", "only updates (↑)", "d", "show brew dependencies", "esc", "clear filters", "r", "rescan now", "R", "recheck updates")
 	act := section("Actions",
-		"o", "open app", "f", "reveal in Finder", "w", "open homepage", "c", "copy path", "i", "copy install command")
+		"U", "upgrade (asks first)", "X", "uninstall (asks first)", "o", "open app", "f", "reveal in Finder",
+		"w", "open homepage", "c", "copy path", "i", "copy install command", "E", "export untracked")
 	legend := section("Legend",
 		"◆", "declared in dotfiles", "◇", "installed, not in dotfiles", "✗", "declared, not installed", "↑", "update available")
 	body := lipgloss.JoinHorizontal(lipgloss.Top, nav, "    ", view) + "\n\n" + lipgloss.JoinHorizontal(lipgloss.Top, act, "    ", legend)
