@@ -91,14 +91,53 @@ func (m Model) queued(id string) int {
 	return -1
 }
 
-// enqueue adds a background upgrade; jobs run one at a time because package managers hold locks.
-func (m *Model) enqueue(p inv.Plan) tea.Cmd {
-	m.jobs = append(m.jobs, p)
-	if len(m.jobs) > 1 {
-		m.notify("…", p.Item.Name+" queued", cSubtle)
+// enqueue adds background upgrades; jobs run one at a time because package managers hold locks.
+func (m *Model) enqueue(plans ...inv.Plan) tea.Cmd {
+	idle := len(m.jobs) == 0
+	m.jobs = append(m.jobs, plans...)
+	switch {
+	case len(plans) > 1:
+		m.notify("↑", fmt.Sprintf("Upgrading %d in the background", len(plans)), cFoam)
+	case !idle:
+		m.notify("…", plans[0].Item.Name+" queued", cSubtle)
+	}
+	if !idle {
 		return nil
 	}
-	return runBackground(p)
+	return runBackground(m.jobs[0])
+}
+
+// upgradeAllPlans lists every update that can run now; items whose upgrade failed need a terminal retry, so they are skipped.
+func (m Model) upgradeAllPlans() (plans []inv.Plan, skipped int) {
+	for _, it := range m.items {
+		if !it.Updatable() || it.Dependency || m.queued(it.ID) >= 0 {
+			continue
+		}
+		if p := inv.PlanUpgrade(m.env, it, m.items); p.Allowed() {
+			if m.failed[it.ID] != "" {
+				skipped++
+				continue
+			}
+			plans = append(plans, p)
+		}
+	}
+	return plans, skipped
+}
+
+// askUpgradeAll opens one confirmation covering every available upgrade.
+func (m *Model) askUpgradeAll() {
+	plans, skipped := m.upgradeAllPlans()
+	if len(plans) == 0 {
+		m.notify("!", "Nothing to upgrade", cGold)
+		return
+	}
+	p := inv.Plan{Kind: inv.OpUpgrade, Label: fmt.Sprintf("Upgrade all %d", len(plans))}
+	p.Item.Name = fmt.Sprintf("%d items", len(plans))
+	p.Warnings = []string{"Each runs in the background, one at a time; any that need a password fail and offer a retry in the terminal"}
+	if skipped > 0 {
+		p.Warnings = append(p.Warnings, fmt.Sprintf("Skipping %d that failed before; retry those one at a time", skipped))
+	}
+	m.confirm, m.batch, m.confirmFocus = &p, plans, 0
 }
 
 func (m Model) finishOp(msg opDoneMsg) (tea.Model, tea.Cmd) {
@@ -143,7 +182,7 @@ func tail(out string, n int) string {
 func (m Model) handleConfirmKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "n", "q":
-		m.confirm = nil
+		m.confirm, m.batch = nil, nil
 	case "tab", "shift+tab", "left", "right", "h", "l":
 		m.confirmFocus = 1 - m.confirmFocus
 	case "y":
@@ -155,10 +194,13 @@ func (m Model) handleConfirmKey(key string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) confirmChoice(choice int) (tea.Model, tea.Cmd) {
-	p := m.confirm
-	m.confirm = nil
+	p, batch := m.confirm, m.batch
+	m.confirm, m.batch = nil, nil
 	if choice != 0 || p == nil {
 		return m, nil
+	}
+	if len(batch) > 0 {
+		return m, m.enqueue(batch...)
 	}
 	// Upgrades run in the background; uninstalls and retries keep the terminal for prompts.
 	if p.Kind == inv.OpUpgrade && m.failed[p.Item.ID] == "" {
@@ -180,8 +222,12 @@ func (m Model) confirmLayout() (string, [2][2]int, int) {
 		fg(accent).Bold(true).Render(icon+" "+p.Kind.String()+" ") + sBright.Render(p.Item.Name) + fg(accent).Bold(true).Render("?"),
 		"",
 	}
-	for _, l := range strings.Split(ansi.Wrap(p.Command(), inner-2, " /"), "\n") {
-		lines = append(lines, sMuted.Render("$ ")+sText.Render(l))
+	if len(m.batch) > 0 {
+		lines = append(lines, m.batchLines(inner)...)
+	} else {
+		for _, l := range strings.Split(ansi.Wrap(p.Command(), inner-2, " /"), "\n") {
+			lines = append(lines, sMuted.Render("$ ")+sText.Render(l))
+		}
 	}
 	if len(p.Warnings) > 0 {
 		lines = append(lines, "")
@@ -204,6 +250,27 @@ func (m Model) confirmLayout() (string, [2][2]int, int) {
 	b0 := lipgloss.Width(buttons[0])
 	spans := [2][2]int{{3, 3 + b0}, {3 + b0 + 3, 3 + b0 + 3 + lipgloss.Width(buttons[1])}}
 	return box, spans, btnLine + 2
+}
+
+// batchLines lists what Upgrade all will touch, trimmed to fit the screen.
+func (m Model) batchLines(w int) []string {
+	room := max(2, m.height-16)
+	var out []string
+	for i, p := range m.batch {
+		if i == room && len(m.batch) > room+1 {
+			out = append(out, sMuted.Render(fmt.Sprintf("  + %d more", len(m.batch)-room)))
+			break
+		}
+		it := p.Item
+		ver := it.Version
+		if it.Latest != "" {
+			ver += " → " + it.Latest
+		}
+		badge := sMuted.Render("  " + string(it.Source))
+		name := ansi.Truncate(it.Name, max(8, w-lipgloss.Width(ver)-lipgloss.Width(badge)-4), "…")
+		out = append(out, sUpdate.Render("↑ ")+sText.Render(name)+"  "+sMuted.Render(ver)+badge)
+	}
+	return out
 }
 
 func (m Model) confirmOrigin(box string) (int, int) {

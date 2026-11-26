@@ -54,6 +54,7 @@ inv collects raw observations from each install source in parallel, then classif
 - **Drift is visible.** ◆ marks items your dotfiles declare, ◇ marks hand installs, and ✗ marks declared items that are missing.
 - **Upgrade and uninstall in place.** Buttons in the details pane run the owning package manager, such as `brew upgrade --cask` or `npm uninstall -g`, after a confirmation that shows the exact command.
   Upgrades run in the background, one at a time, while you keep browsing.
+  `A` or the footer button upgrades everything at once after one confirmation.
 - **It stays current.** A file watcher rescans only the affected sources and announces installs, removals, and upgrades as they happen.
 
 The details pane adds versions and available updates, install and last-used dates, zsh history run counts, commands shared between installs, dangling links, and a reinstall command.

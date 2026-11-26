@@ -106,6 +106,7 @@ type Model struct {
 
 	confirm      *inv.Plan         // pending upgrade or uninstall awaiting confirmation
 	confirmFocus int               // 0 confirm, 1 cancel
+	batch        []inv.Plan        // upgrades the pending Upgrade all dialog covers
 	jobs         []inv.Plan        // background upgrades; the first is running
 	failed       map[string]string // item ID to the tail of its failed upgrade's output
 	exportOpen   bool

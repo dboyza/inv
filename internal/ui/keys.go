@@ -120,6 +120,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.scanCmd(inv.AllGroups, false)
 	case "U":
 		m.askOp(inv.OpUpgrade)
+	case "A":
+		m.askUpgradeAll()
 	case "X":
 		m.askOp(inv.OpUninstall)
 	case "E":
@@ -158,6 +160,10 @@ func (m Model) handleClick(mouse tea.Mouse) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	lay := m.layout()
+	if x0, x1, ok := m.upgradeAllSpan(); ok && mouse.Y == lay.bodyY+lay.bodyH && mouse.X >= x0 && mouse.X < x1 {
+		m.askUpgradeAll()
+		return m, nil
+	}
 	if kind, ok := m.actionAt(mouse.X, mouse.Y); ok {
 		m.askOp(kind)
 		return m, nil

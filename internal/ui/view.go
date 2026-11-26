@@ -404,7 +404,7 @@ func (m Model) footerView() string {
 		enter = "details"
 	}
 	hints := []string{"/", "search", "←→", "tabs", "↵", enter, "b", "group", "s", "sort", "t", "untracked", "u", "updates",
-		"U", "upgrade", "X", "uninstall", "d", "deps", "E", "export", "o", "open", "?", "help", "q", "quit"}
+		"U", "upgrade", "A", "upgrade all", "X", "uninstall", "d", "deps", "E", "export", "o", "open", "?", "help", "q", "quit"}
 	var untracked, updates int
 	for _, it := range m.items {
 		if it.Dependency {
@@ -418,7 +418,9 @@ func (m Model) footerView() string {
 		}
 	}
 	right := ""
-	if updates > 0 {
+	if b := m.upgradeAllButton(); b != "" {
+		right += b + "  "
+	} else if updates > 0 {
 		right += sUpdate.Render(fmt.Sprintf("↑ %d", updates)) + sMuted.Render(" updates  ")
 	}
 	if untracked > 0 {
@@ -434,6 +436,31 @@ func (m Model) footerView() string {
 		left += part
 	}
 	return spread(" "+left, right, m.width)
+}
+
+// upgradeAllButton is the footer pill that opens the Upgrade all dialog, empty when nothing can run.
+func (m Model) upgradeAllButton() string {
+	plans, _ := m.upgradeAllPlans()
+	if len(plans) == 0 {
+		return ""
+	}
+	return button(fmt.Sprintf("↑ Upgrade all %d", len(plans)), cFoam, false)
+}
+
+// upgradeAllSpan finds the footer button's columns; it sits just left of the untracked count.
+func (m Model) upgradeAllSpan() (int, int, bool) {
+	b := m.upgradeAllButton()
+	if b == "" {
+		return 0, 0, false
+	}
+	foot := ansi.Strip(m.footerView())
+	label := ansi.Strip(b)
+	i := strings.LastIndex(foot, label)
+	if i < 0 {
+		return 0, 0, false
+	}
+	x0 := lipgloss.Width(foot[:i])
+	return x0, x0 + lipgloss.Width(label), true
 }
 
 func (m Model) toastView() string {
@@ -464,7 +491,7 @@ func (m Model) helpView() string {
 		"b", "group: purpose, source, none", "s", "sort: name, newest, last used", "t", "only untracked (◇)",
 		"u", "only updates (↑)", "d", "show brew dependencies", "esc", "clear filters", "r", "rescan now", "R", "recheck updates")
 	act := section("Actions",
-		"U", "upgrade in background", "X", "uninstall (asks first)", "o", "open app", "f", "reveal in Finder",
+		"U", "upgrade in background", "A", "upgrade everything", "X", "uninstall (asks first)", "o", "open app", "f", "reveal in Finder",
 		"w", "open homepage", "c", "copy path", "i", "copy install command", "E", "export untracked")
 	legend := section("Legend",
 		"◆", "declared in dotfiles", "◇", "installed, not in dotfiles", "✗", "declared, not installed", "↑", "update available")

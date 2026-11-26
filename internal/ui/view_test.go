@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/dboyza/inv/internal/inv"
@@ -161,6 +162,53 @@ func TestUpgradeRunsInBackgroundAndFailureRetriesInTerminal(t *testing.T) {
 	if m.confirm == nil || m.confirm.Label != "Retry in terminal" {
 		t.Fatalf("a failed upgrade should offer a terminal retry, got %v", m.confirm)
 	}
+	for i, l := range strings.Split(m.View().Content, "\n") {
+		if lipgloss.Width(l) > 80 {
+			t.Errorf("line %d overflows", i)
+		}
+	}
+}
+
+func TestUpgradeAllConfirmsThenQueuesEveryUpdate(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {140, 40}} {
+		m := testModel(size[0], size[1])
+		plans, _ := m.upgradeAllPlans()
+		if len(plans) == 0 {
+			t.Fatal("the fixture has updates, so Upgrade all should have work")
+		}
+		x0, x1, ok := m.upgradeAllSpan()
+		if !ok {
+			t.Fatalf("%v: footer has no Upgrade all button:\n%s", size, m.footerView())
+		}
+		lay := m.layout()
+		next, _ := m.handleClick(tea.Mouse{X: (x0 + x1) / 2, Y: lay.bodyY + lay.bodyH})
+		m = next.(Model)
+		if m.confirm == nil || len(m.batch) != len(plans) {
+			t.Fatalf("%v: clicking the footer button should confirm %d upgrades", size, len(plans))
+		}
+		for i, l := range strings.Split(m.View().Content, "\n") {
+			if lipgloss.Width(l) > size[0] {
+				t.Errorf("%v: line %d overflows", size, i)
+			}
+		}
+		next, _ = m.handleConfirmKey("esc")
+		if c := next.(Model); c.confirm != nil || c.batch != nil || len(c.jobs) != 0 {
+			t.Fatal("cancelling should queue nothing")
+		}
+		next, cmd := m.handleConfirmKey("enter")
+		m = next.(Model)
+		if len(m.jobs) != len(plans) || cmd == nil {
+			t.Fatalf("confirming should queue %d jobs, got %d", len(plans), len(m.jobs))
+		}
+		if again, _ := m.upgradeAllPlans(); len(again) != 0 {
+			t.Error("queued items should not be offered again")
+		}
+	}
+}
+
+func TestHelpFitsSmallTerminal(t *testing.T) {
+	m := testModel(80, 24)
+	m.showHelp = true
 	for i, l := range strings.Split(m.View().Content, "\n") {
 		if lipgloss.Width(l) > 80 {
 			t.Errorf("line %d overflows", i)
