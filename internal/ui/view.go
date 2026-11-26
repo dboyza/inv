@@ -100,6 +100,11 @@ func (m Model) headerView() string {
 
 	var status string
 	switch {
+	case len(m.jobs) > 0:
+		status = m.spin() + sSubtle.Render(" upgrading "+m.jobs[0].Item.Name)
+		if len(m.jobs) > 1 {
+			status += sMuted.Render(fmt.Sprintf(" · %d queued", len(m.jobs)-1))
+		}
 	case m.scans > 0 && !m.hasData:
 		status = m.spin() + sSubtle.Render(" scanning your Mac")
 	case m.scans > 0:
@@ -302,6 +307,12 @@ func (m Model) itemRow(r row, w int, selected bool, acc color.Color) string {
 		version += " ↑"
 		verStyle = bg(sUpdate)
 	}
+	switch q := m.queued(it.ID); {
+	case q == 0:
+		version, verStyle = string([]rune(spinnerFrames)[m.frame%len([]rune(spinnerFrames))])+" upgrading", bg(sUpdate)
+	case q > 0:
+		version, verStyle = "queued", bg(sMuted)
+	}
 	version = ansi.Truncate(version, 16, "…")
 
 	nameStyle := bg(sText)
@@ -453,7 +464,7 @@ func (m Model) helpView() string {
 		"b", "group: purpose, source, none", "s", "sort: name, newest, last used", "t", "only untracked (◇)",
 		"u", "only updates (↑)", "d", "show brew dependencies", "esc", "clear filters", "r", "rescan now", "R", "recheck updates")
 	act := section("Actions",
-		"U", "upgrade (asks first)", "X", "uninstall (asks first)", "o", "open app", "f", "reveal in Finder",
+		"U", "upgrade in background", "X", "uninstall (asks first)", "o", "open app", "f", "reveal in Finder",
 		"w", "open homepage", "c", "copy path", "i", "copy install command", "E", "export untracked")
 	legend := section("Legend",
 		"◆", "declared in dotfiles", "◇", "installed, not in dotfiles", "✗", "declared, not installed", "↑", "update available")

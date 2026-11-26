@@ -104,8 +104,10 @@ type Model struct {
 	showHelp   bool
 	detailOpen bool // narrow layout detail overlay
 
-	confirm      *inv.Plan // pending upgrade or uninstall awaiting confirmation
-	confirmFocus int       // 0 confirm, 1 cancel
+	confirm      *inv.Plan         // pending upgrade or uninstall awaiting confirmation
+	confirmFocus int               // 0 confirm, 1 cancel
+	jobs         []inv.Plan        // background upgrades; the first is running
+	failed       map[string]string // item ID to the tail of its failed upgrade's output
 	exportOpen   bool
 	exportText   string
 	exportScroll int
@@ -121,7 +123,7 @@ func New(env *inv.Env, version string) Model {
 	ti.CharLimit = 64
 	host, _ := os.Hostname()
 	host = strings.TrimSuffix(host, ".local")
-	m := Model{env: env, version: version, host: host, search: ti, flash: map[string]time.Time{}, width: 120, height: 36, scans: 1}
+	m := Model{env: env, version: version, host: host, search: ti, flash: map[string]time.Time{}, failed: map[string]string{}, width: 120, height: 36, scans: 1}
 	if snap, ok := inv.LoadCache(); ok {
 		m.snap = snap
 		m.rebuild()
@@ -172,7 +174,7 @@ func tick(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func (m Model) busy() bool { return m.scans > 0 || m.checking }
+func (m Model) busy() bool { return m.scans > 0 || m.checking || len(m.jobs) > 0 }
 
 // Section: Update
 
@@ -241,9 +243,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseWheelMsg:
 		mouse := msg.Mouse()
-		delta := 3
+		delta := 1 // trackpads send many events per swipe, so one row each feels natural
 		if mouse.Button == tea.MouseWheelUp {
-			delta = -3
+			delta = -1
 		}
 		if m.overDetail(mouse.X) {
 			m.dScroll = max(0, m.dScroll+delta)

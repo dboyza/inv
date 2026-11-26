@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func testModel(w, h int) Model {
 		Dotfiles: inv.DotfilesData{Repo: "/Users/me/dotfiles", Brews: []string{"terraform", "jq"}},
 		Updates:  inv.Updates{Formulae: map[string]string{"terraform": "1.17.0"}},
 	}
-	m := Model{env: env, version: "test", host: "test-mac", flash: map[string]time.Time{}, width: w, height: h, snap: snap, hasData: true}
+	m := Model{env: env, version: "test", host: "test-mac", flash: map[string]time.Time{}, failed: map[string]string{}, width: w, height: h, snap: snap, hasData: true}
 	m.rebuild()
 	return m
 }
@@ -131,5 +132,38 @@ func TestDetailButtonsAreClickable(t *testing.T) {
 	kind, ok := m.actionAt(lay.listW+2+h.x0, lay.bodyY+1+h.line)
 	if !ok || kind != h.kind {
 		t.Errorf("click missed the %v button", h.kind)
+	}
+}
+
+func TestUpgradeRunsInBackgroundAndFailureRetriesInTerminal(t *testing.T) {
+	m := testModel(80, 24)
+	m.setTab(1)
+	m.cursor[m.tab] = "brew:terraform"
+	m.askOp(inv.OpUpgrade)
+	next, cmd := m.handleConfirmKey("enter")
+	m = next.(Model)
+	if len(m.jobs) != 1 || cmd == nil {
+		t.Fatalf("confirming an upgrade should queue a background job, got %d", len(m.jobs))
+	}
+	if !strings.Contains(m.View().Content, "upgrading") {
+		t.Error("the running upgrade should show in the header and row")
+	}
+	m.askOp(inv.OpUninstall)
+	if m.confirm != nil {
+		t.Error("an item that is upgrading should not offer uninstall")
+	}
+	next, _ = m.finishOp(opDoneMsg{plan: m.jobs[0], err: errors.New("exit 1"), output: "==> Upgrading\nError: sudo: a terminal is required\n", background: true})
+	m = next.(Model)
+	if len(m.jobs) != 0 || m.failed["brew:terraform"] != "==> Upgrading\nError: sudo: a terminal is required" {
+		t.Fatalf("jobs = %d failed = %q", len(m.jobs), m.failed["brew:terraform"])
+	}
+	m.askOp(inv.OpUpgrade)
+	if m.confirm == nil || m.confirm.Label != "Retry in terminal" {
+		t.Fatalf("a failed upgrade should offer a terminal retry, got %v", m.confirm)
+	}
+	for i, l := range strings.Split(m.View().Content, "\n") {
+		if lipgloss.Width(l) > 80 {
+			t.Errorf("line %d overflows", i)
+		}
 	}
 }

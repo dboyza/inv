@@ -10,7 +10,9 @@ Record only durable project knowledge, never session notes.
 - Desktop apps and terminal tools must stay visually separate: distinct tabs, accent colors, and icons per kind.
 - Tabs are Desktop, Terminal, Runtimes, Fonts, Extensions, and Services; items group by purpose by default, with the source shown as a badge.
 - The theme is Rose Pine Moon, matching the user's dotfiles `theme/palette.json`; do not paint a global background.
-- Upgrade and uninstall always confirm first and run in the foreground via `tea.ExecProcess`, so output and Touch ID or sudo prompts stay visible; uninstall dialogs default to Cancel.
+- Upgrade and uninstall always confirm first; uninstall dialogs default to Cancel.
+  Upgrades run in the background one at a time with no terminal, so prompts fail fast; a failed upgrade shows its output and retries in the foreground.
+  Uninstalls run in the foreground via `tea.ExecProcess`, so output and Touch ID or sudo prompts stay visible.
   Plans live in `ops.go`: use the owning package manager, move unmanaged items to the Trash through Finder, and block bundled CLIs, dotfiles-managed tools, plugins, services, and system installs with a reason.
   Never trash a path that `safeToTrash` rejects, and trash font families by their exact files, never the Fonts folder.
 - Homebrew dependencies are hidden until toggled; macOS system apps (non-App Store `com.apple.*`) are excluded, while Apple's App Store apps appear in an Apple group.

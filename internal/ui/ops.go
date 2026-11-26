@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -17,8 +18,10 @@ import (
 // Section: Plans for the selected item
 
 type opDoneMsg struct {
-	plan inv.Plan
-	err  error
+	plan       inv.Plan
+	err        error
+	output     string // captured output of a background run
+	background bool
 }
 
 func (m Model) plans(it *inv.Item) (up, rm inv.Plan) {
@@ -40,6 +43,14 @@ func (m *Model) askOp(kind inv.OpKind) {
 		m.notify("!", p.Blocked, cGold)
 		return
 	}
+	if m.queued(it.ID) >= 0 {
+		m.notify("!", it.Name+" is already upgrading", cGold)
+		return
+	}
+	if m.failed[it.ID] != "" && kind == inv.OpUpgrade {
+		p.Label = "Retry in terminal"
+		p.Warnings = append(p.Warnings, "The background upgrade failed, so this retry runs in the terminal where prompts can be answered")
+	}
 	m.confirm = &p
 	// Destructive dialogs default to Cancel; upgrades default to confirm.
 	m.confirmFocus = 0
@@ -60,15 +71,71 @@ exit "$s"`
 	return tea.ExecProcess(exec.Command("/bin/sh", args...), func(err error) tea.Msg { return opDoneMsg{plan: p, err: err} })
 }
 
+// runBackground captures the command's output without a terminal, so password prompts fail fast instead of drawing over inv.
+func runBackground(p inv.Plan) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command(p.Argv[0], p.Argv[1:]...)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		out, err := cmd.CombinedOutput()
+		return opDoneMsg{plan: p, err: err, output: string(out), background: true}
+	}
+}
+
+// queued reports an item's place in the upgrade queue, where 0 is running, or -1.
+func (m Model) queued(id string) int {
+	for i, p := range m.jobs {
+		if p.Item.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// enqueue adds a background upgrade; jobs run one at a time because package managers hold locks.
+func (m *Model) enqueue(p inv.Plan) tea.Cmd {
+	m.jobs = append(m.jobs, p)
+	if len(m.jobs) > 1 {
+		m.notify("…", p.Item.Name+" queued", cSubtle)
+		return nil
+	}
+	return runBackground(p)
+}
+
 func (m Model) finishOp(msg opDoneMsg) (tea.Model, tea.Cmd) {
+	id, name := msg.plan.Item.ID, msg.plan.Item.Name
 	verb := map[inv.OpKind]string{inv.OpUpgrade: "Upgraded", inv.OpUninstall: "Removed"}[msg.plan.Kind]
 	if msg.err != nil {
-		m.notify("!", fmt.Sprintf("%s %s failed", strings.ToLower(msg.plan.Kind.String()), msg.plan.Item.Name), cLove)
+		m.notify("!", fmt.Sprintf("%s %s failed", strings.ToLower(msg.plan.Kind.String()), name), cLove)
+		if msg.background {
+			m.failed[id] = tail(msg.output, 3)
+		}
 	} else {
-		m.notify("✓", verb+" "+msg.plan.Item.Name, cPine)
+		m.notify("✓", verb+" "+name, cPine)
+		delete(m.failed, id)
 	}
+	cmds := []tea.Cmd{m.scanCmd(append(msg.plan.Groups, inv.GHistory), false)}
 	m.scans++
-	return m, m.scanCmd(append(msg.plan.Groups, inv.GHistory), false)
+	if msg.background && len(m.jobs) > 0 {
+		m.jobs = m.jobs[1:]
+		if len(m.jobs) > 0 {
+			cmds = append(cmds, runBackground(m.jobs[0]))
+		}
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// tail keeps the last n non-empty lines of command output, without colors.
+func tail(out string, n int) string {
+	var lines []string
+	for _, l := range strings.Split(ansi.Strip(out), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) == 0 {
+		return "exited without output"
+	}
+	return strings.Join(lines[max(0, len(lines)-n):], "\n")
 }
 
 // Section: Confirmation dialog
@@ -92,6 +159,10 @@ func (m Model) confirmChoice(choice int) (tea.Model, tea.Cmd) {
 	m.confirm = nil
 	if choice != 0 || p == nil {
 		return m, nil
+	}
+	// Upgrades run in the background; uninstalls and retries keep the terminal for prompts.
+	if p.Kind == inv.OpUpgrade && m.failed[p.Item.ID] == "" {
+		return m, m.enqueue(*p)
 	}
 	return m, runPlan(*p)
 }
@@ -170,6 +241,13 @@ type actionHit struct {
 // actionBar renders Upgrade and Uninstall buttons, or the reason they are unavailable.
 func (m Model) actionBar(it *inv.Item, w int) (lines []string, hits []actionHit) {
 	up, rm := m.plans(it)
+	if q := m.queued(it.ID); q >= 0 {
+		status := m.spin() + sSubtle.Render(" Upgrading in the background…")
+		if q > 0 {
+			status = sMuted.Render(fmt.Sprintf("… Queued to upgrade (%d ahead)", q))
+		}
+		return []string{status}, nil
+	}
 	var row string
 	x := 0
 	add := func(p inv.Plan, accent color.Color, icon string, filled bool) {
@@ -201,6 +279,12 @@ func (m Model) actionBar(it *inv.Item, w int) (lines []string, hits []actionHit)
 	}
 	if !rm.Allowed() && rm.Blocked != "Not installed" && it.Declared != inv.DeclMissing {
 		lines = append(lines, sMuted.Render(ansi.Truncate("✕ "+rm.Blocked, w, "…")))
+	}
+	if out := m.failed[it.ID]; out != "" {
+		lines = append(lines, sErr.Render("! Upgrade failed"))
+		for _, l := range strings.Split(out, "\n") {
+			lines = append(lines, sMuted.Render(ansi.Truncate("  "+l, w, "…")))
+		}
 	}
 	return lines, hits
 }
